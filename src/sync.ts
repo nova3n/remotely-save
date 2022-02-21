@@ -300,7 +300,7 @@ const ensembleMixedStates = async (
     const key = entry.key;
     const r = {
       key: key,
-      deltimeLocal: entry.actionWhen,
+      deltimeRemote: entry.actionWhen,
     } as FileOrFolderMixedState;
 
     if (results.hasOwnProperty(key)) {
