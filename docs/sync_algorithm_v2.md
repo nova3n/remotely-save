@@ -52,11 +52,10 @@ We actually do not use any folders' metadata. Thus the only relevent info is the
 2. Then, a folder is deletable, if and only if all the following conditions meet:
 
    - it shows up in the remote deletion history
-   - all its sub-folders are deletable.
-   - it has at least one deleted-in-this-sync recursive sub-files.
-   - it doesn't have any sub-files after all files' deletions
+   - it's empty, or all its sub-folders are deletable
 
    Some examples:
 
-   - A user deletes the folder in device 1, then syncs from the device 1, then creates the same-name folder in device 2, then syncs from the device 2. The folder should be kept, instead of deleted, on device 2.
-   - A user deletes the folder in device 1, then syncs from the device 1, then do not touch the same-name folder in device 2, then syncs from the device 2. The folder should be deleted on device 2.
+   - A user deletes the folder in device 1, then syncs from the device 1, then creates the same-name folder in device 2, then syncs from the device 2. The folder is deleted (again), on device 2.
+   - A user deletes the folder in device 1, then syncs from the device 1, then creates the same-name folder in device 2, **then create a new file inside it,** then syncs from the device 2. The folder is **kept** instead of deleted because of the new file, on device 2.
+   - A user deletes the folder in device 1, then syncs from the device 1, then do not touch the same-name folder in device 2, then syncs from the device 2. The folder and its untouched sub-files should be deleted on device 2.
