@@ -39,7 +39,7 @@ import { doActualSync, getSyncPlan, isPasswordOk } from "./sync";
 import { messyConfigToNormal, normalConfigToMessy } from "./configPersist";
 
 import * as origLog from "loglevel";
-import { MetadataOnRemote } from "./metadataOnRemote";
+import { DeletionOnRemote, MetadataOnRemote } from "./metadataOnRemote";
 const log = origLog.getLogger("rs-default");
 
 const DEFAULT_SETTINGS: RemotelySavePluginSettings = {
@@ -85,6 +85,7 @@ export default class RemotelySavePlugin extends Plugin {
   currSyncMsg?: string;
   syncRibbon?: HTMLElement;
   autoRunIntervalID?: number;
+  ignoreAutoRemovedRecords?: Record<string, number>;
 
   async syncRun(triggerSource: SyncTriggerSourceType = "manual") {
     const getNotice = (x: string) => {
@@ -149,7 +150,9 @@ export default class RemotelySavePlugin extends Plugin {
       );
       const remoteRsp = await client.listFromRemote();
       log.info(remoteRsp);
-      const metadataOnRemote: MetadataOnRemote = { deletions: [] as any[] };
+      const metadataOnRemote: MetadataOnRemote = {
+        deletions: [] as DeletionOnRemote[],
+      };
 
       getNotice("3/7 Starting to fetch local meta data.");
       this.syncStatus = "getting_local_meta";
@@ -262,6 +265,8 @@ export default class RemotelySavePlugin extends Plugin {
       revokeAuthSetting: undefined,
     }; // init
 
+    this.ignoreAutoRemovedRecords = {};
+
     this.currSyncMsg = "";
 
     await this.loadSettings();
@@ -279,11 +284,20 @@ export default class RemotelySavePlugin extends Plugin {
 
     this.registerEvent(
       this.app.vault.on("delete", async (fileOrFolder) => {
-        await insertDeleteRecordByVault(
-          this.db,
-          fileOrFolder,
-          this.settings.vaultRandomID
-        );
+        const EXPIRE_MILLISECONDS = 1000 * 10;
+        if (
+          this.ignoreAutoRemovedRecords[fileOrFolder.path] === undefined ||
+          this.ignoreAutoRemovedRecords[fileOrFolder.path] +
+            EXPIRE_MILLISECONDS <
+            Date.now()
+        ) {
+          await insertDeleteRecordByVault(
+            this.db,
+            fileOrFolder,
+            this.settings.vaultRandomID
+          );
+        }
+        delete this.ignoreAutoRemovedRecords[fileOrFolder.path];
       })
     );
 
@@ -624,6 +638,14 @@ export default class RemotelySavePlugin extends Plugin {
     ) {
       this.settings.vaultRandomID = nanoid();
       await this.saveSettings();
+    }
+  }
+
+  async trash(x: string) {
+    this.ignoreAutoRemovedRecords[x] = Date.now();
+    if (!(await this.app.vault.adapter.trashSystem(x))) {
+      this.ignoreAutoRemovedRecords[x] = Date.now();
+      await this.app.vault.adapter.trashLocal(x);
     }
   }
 
