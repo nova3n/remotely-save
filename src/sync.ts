@@ -552,10 +552,6 @@ export const getSyncPlan = async (
   for (let i = 0; i < sortedKeys.length; ++i) {
     const key = sortedKeys[i];
     const val = mixedStates[key];
-    let prevKey: string = undefined;
-    if (i > 0) {
-      prevKey = sortedKeys[i - 1];
-    }
 
     if (key.endsWith("/")) {
       // decide some folders
@@ -574,7 +570,145 @@ export const getSyncPlan = async (
     remoteType: remoteType,
     mixedStates: mixedStates,
   } as SyncPlanType;
-  return plan;
+  return {
+    plan: plan,
+    sortedKeys: sortedKeys,
+  };
+};
+
+const dispatchOperationToActual = async (
+  key: string,
+  vaultRandomID: string,
+  r: FileOrFolderMixedState,
+  client: RemoteClient,
+  db: InternalDBs,
+  vault: Vault,
+  localDeleteFunc: any,
+  keepDeleteRecordsFunc: any,
+  password: string = ""
+) => {
+  let remoteEncryptedKey = key;
+  if (password !== "") {
+    remoteEncryptedKey = r.remoteEncryptedKey;
+    if (remoteEncryptedKey === undefined || remoteEncryptedKey === "") {
+      // the old version uses base32
+      // remoteEncryptedKey = await encryptStringToBase32(key, password);
+      // the new version users base64url
+      remoteEncryptedKey = await encryptStringToBase64url(key, password);
+    }
+  }
+
+  if (r.decision === undefined) {
+    throw Error(`unknown decision in ${JSON.stringify(r)}`);
+  } else if (r.decision === "skipUploading") {
+    // do nothing!
+  } else if (r.decision === "uploadLocalDelHistToRemote") {
+    if (r.existLocal) {
+      await localDeleteFunc(r.key);
+    }
+    if (r.existRemote) {
+      await client.deleteFromRemote(r.key, password, remoteEncryptedKey);
+    }
+    await keepDeleteRecordsFunc(r.key);
+    await clearDeleteRenameHistoryOfKeyAndVault(db, r.key, vaultRandomID);
+  } else if (r.decision === "keepRemoteDelHist") {
+    await keepDeleteRecordsFunc(r.key);
+    if (r.existLocal) {
+      await localDeleteFunc(r.key);
+    }
+    if (r.existRemote) {
+      await client.deleteFromRemote(r.key, password, remoteEncryptedKey);
+    }
+    await keepDeleteRecordsFunc(r.key);
+    await clearDeleteRenameHistoryOfKeyAndVault(db, r.key, vaultRandomID);
+  } else if (r.decision === "uploadLocalToRemote") {
+    if (
+      client.serviceType === "onedrive" &&
+      r.sizeLocal === 0 &&
+      password === ""
+    ) {
+      // special treatment for empty files for OneDrive
+      // TODO: it's ugly, any other way?
+      // special treatment for OneDrive: do nothing, skip empty file without encryption
+      // if it's empty folder, or it's encrypted file/folder, it continues to be uploaded.
+    } else {
+      const remoteObjMeta = await client.uploadToRemote(
+        r.key,
+        vault,
+        false,
+        password,
+        remoteEncryptedKey
+      );
+      await upsertSyncMetaMappingDataByVault(
+        client.serviceType,
+        db,
+        r.key,
+        r.mtimeLocal,
+        r.sizeLocal,
+        r.key,
+        remoteObjMeta.lastModified,
+        remoteObjMeta.size,
+        remoteObjMeta.etag,
+        vaultRandomID
+      );
+    }
+    await clearDeleteRenameHistoryOfKeyAndVault(db, r.key, vaultRandomID);
+  } else if (r.decision === "downloadRemoteToLocal") {
+    // await mkdirpInVault(r.key, vault); /* should be unnecessary */
+    await client.downloadFromRemote(
+      r.key,
+      vault,
+      r.mtimeRemote,
+      password,
+      remoteEncryptedKey
+    );
+    await clearDeleteRenameHistoryOfKeyAndVault(db, r.key, vaultRandomID);
+  } else if (r.decision === "createFolder") {
+    if (!r.existLocal) {
+      await mkdirpInVault(r.key, vault);
+    }
+    if (!r.existRemote) {
+      const remoteObjMeta = await client.uploadToRemote(
+        r.key,
+        vault,
+        false,
+        password,
+        remoteEncryptedKey
+      );
+      await upsertSyncMetaMappingDataByVault(
+        client.serviceType,
+        db,
+        r.key,
+        r.mtimeLocal,
+        r.sizeLocal,
+        r.key,
+        remoteObjMeta.lastModified,
+        remoteObjMeta.size,
+        remoteObjMeta.etag,
+        vaultRandomID
+      );
+    }
+    await clearDeleteRenameHistoryOfKeyAndVault(db, r.key, vaultRandomID);
+  } else if (r.decision === "delFolder") {
+    if (r.existLocal) {
+      await localDeleteFunc(r.key);
+    }
+    if (r.existRemote) {
+      await client.deleteFromRemote(r.key, password, remoteEncryptedKey);
+    }
+    await keepDeleteRecordsFunc(r.key);
+    await clearDeleteRenameHistoryOfKeyAndVault(db, r.key, vaultRandomID);
+  } else if (r.decision === "uploadLocalDelHistToRemoteFolder") {
+    await keepDeleteRecordsFunc(r.key);
+    await clearDeleteRenameHistoryOfKeyAndVault(db, r.key, vaultRandomID);
+  } else if (r.decision === "keepRemoteDelHistFolder") {
+    await keepDeleteRecordsFunc(r.key);
+    await clearDeleteRenameHistoryOfKeyAndVault(db, r.key, vaultRandomID);
+  } else if (r.decision === "skipFolder") {
+    // do nothing!
+  } else {
+    throw Error(`unknown decision in ${JSON.stringify(r)}`);
+  }
 };
 
 export const doActualSync = async (
@@ -583,6 +717,51 @@ export const doActualSync = async (
   vaultRandomID: string,
   vault: Vault,
   syncPlan: SyncPlanType,
+  sortedKeys: string[],
   password: string = "",
   callbackSyncProcess?: any
-) => {};
+) => {
+  const mixedStates = syncPlan.mixedStates;
+  let i = 0;
+  const totalCount = sortedKeys.length || 0;
+
+  for (let i = 0; i < sortedKeys.length; ++i) {
+    const key = sortedKeys[i];
+    const val = mixedStates[key];
+
+    log.debug(`start syncing "${key}" with plan ${JSON.stringify(val)}`);
+
+    if (callbackSyncProcess !== undefined) {
+      await callbackSyncProcess(i, totalCount, key, val.decision);
+    }
+
+    await dispatchOperationToActual(
+      key,
+      vaultRandomID,
+      val,
+      client,
+      db,
+      vault,
+      (tmp: any) => tmp,
+      (tmp: any) => tmp,
+      password
+    );
+    log.debug(`finished ${key}`);
+
+    // await Promise.all(
+    //   Object.entries(mixedStates).map(async ([k, v]) =>
+    //     dispatchOperationToActual(
+    //       k as string,
+    //       vaultRandomID,
+    //       v as FileOrFolderMixedState,
+    //       client,
+    //       db,
+    //       vault,
+    //       (tmp: any) => tmp,
+    //       (tmp: any) => tmp,
+    //       password
+    //     )
+    //   )
+    // );
+  }
+};
