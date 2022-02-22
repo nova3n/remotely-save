@@ -50,11 +50,8 @@ type DecisionTypeForFile =
   | "downloadRemoteToLocal"; // "downloadRemoteToLocal && skipRemote && cleanLocalDelHist && cleanRemoteDelHist"
 
 type DecisionTypeForFolder =
-  | "createLocalFolder"
-  | "createRemoteFolder"
-  | "delLocalFolder"
-  | "delRemoteFolder"
-  | "delLocalAndRemoteFolder"
+  | "createFolder"
+  | "delFolder"
   | "uploadLocalDelHistToRemoteFolder"
   | "keepRemoteDelHistFolder"
   | "skipFolder";
@@ -255,6 +252,7 @@ const ensembleMixedStates = async (
         results[key].changeMtimeUsingMapping = r.changeMtimeUsingMapping;
       } else {
         results[key] = r;
+        results[key].existLocal = false;
       }
     }
   }
@@ -295,6 +293,7 @@ const ensembleMixedStates = async (
       results[key].sizeLocal = r.sizeLocal;
     } else {
       results[key] = r;
+      results[key].existRemote = false;
     }
   }
 
@@ -310,6 +309,9 @@ const ensembleMixedStates = async (
       results[key].deltimeRemote = r.deltimeRemote;
     } else {
       results[key] = r;
+
+      results[key].existLocal = false;
+      results[key].existRemote = false;
     }
   }
 
@@ -338,38 +340,18 @@ const ensembleMixedStates = async (
       results[key].deltimeLocal = r.deltimeLocal;
     } else {
       results[key] = r;
+
+      results[key].existLocal = false;
+      results[key].existRemote = false;
     }
   }
 
   return results;
 };
 
-class FolderInfo {
-  readonly m: Record<string, number>;
-  constructor() {
-    this.m = {};
-  }
-  getMustBeKeptChildrenCnt(x: string) {
-    if (this.m[x] === undefined) {
-      return 0;
-    }
-    return this.m[x];
-  }
-  addMustBeKeptChildrenCnt(x: string, n: number = 1) {
-    if (this.m[x] === undefined) {
-      this.m[x] = n;
-    } else {
-      this.m[x] += n;
-    }
-  }
-  remove(x: string) {
-    delete this.m[x];
-  }
-}
-
 const assignOperationToFileInplace = (
   origRecord: FileOrFolderMixedState,
-  folderInfo: FolderInfo
+  keptFolder: Set<string>
 ) => {
   let r = origRecord;
 
@@ -419,7 +401,7 @@ const assignOperationToFileInplace = (
       } else {
         r.decision = "uploadLocalToRemote";
       }
-      folderInfo.addMustBeKeptChildrenCnt(getParentFolder(r.key));
+      keptFolder.add(getParentFolder(r.key));
       return r;
     }
   }
@@ -435,7 +417,7 @@ const assignOperationToFileInplace = (
       r.mtimeRemote >= deltime_remote
     ) {
       r.decision = "downloadRemoteToLocal";
-      folderInfo.addMustBeKeptChildrenCnt(getParentFolder(r.key));
+      keptFolder.add(getParentFolder(r.key));
       return r;
     }
   }
@@ -481,7 +463,7 @@ const assignOperationToFileInplace = (
 
 const assignOperationToFolderInplace = (
   origRecord: FileOrFolderMixedState,
-  folderInfo: FolderInfo
+  keptFolder: Set<string>
 ) => {
   let r = origRecord;
 
@@ -491,17 +473,13 @@ const assignOperationToFolderInplace = (
     return r;
   }
 
-  if (folderInfo.getMustBeKeptChildrenCnt(r.key) === 0) {
+  if (!keptFolder.has(r.key)) {
     // the folder does NOT have any must-be-kept children!
 
     if (r.deltimeLocal !== undefined || r.deltimeRemote !== undefined) {
       // it has some deletion "commands"
-      if (r.existLocal && r.existRemote) {
-        r.decision = "delLocalAndRemoteFolder";
-      } else if (r.existLocal && !r.existRemote) {
-        r.decision = "delLocalFolder";
-      } else if (!r.existLocal && r.existRemote) {
-        r.decision = "delRemoteFolder";
+      if (r.existLocal || r.existRemote) {
+        r.decision = "delFolder";
       } else {
         // no exists
         // actually deleted before???
@@ -520,38 +498,28 @@ const assignOperationToFolderInplace = (
       // keep it as is, and skip it!
       r.decision = "skipFolder";
       if (r.existLocal || r.existRemote) {
-        folderInfo.addMustBeKeptChildrenCnt(getParentFolder(r.key));
+        keptFolder.add(getParentFolder(r.key));
       }
-      folderInfo.remove(r.key);
-      return r;
     }
   } else {
     // the folder has some must be kept children!
-
-    if (!r.existRemote && !r.existLocal) {
+    // so itself and its parent folder must be kept
+    keptFolder.add(getParentFolder(r.key));
+    if (r.existLocal && r.existRemote) {
+      r.decision = "skipFolder";
+    } else if (r.existLocal || r.existRemote) {
+      r.decision = "createFolder";
+    } else {
       throw Error(
         `Error: Folder ${r.key} doesn't exist locally and remotely but is marked must be kept. Abort.`
       );
     }
-    if (!r.existLocal) {
-      r.decision = "createLocalFolder";
-      folderInfo.remove(r.key);
-      folderInfo.addMustBeKeptChildrenCnt(getParentFolder(r.key));
-      return r;
-    }
-    if (!r.existRemote) {
-      r.decision = "createRemoteFolder";
-      folderInfo.remove(r.key);
-      folderInfo.addMustBeKeptChildrenCnt(getParentFolder(r.key));
-      return r;
-    }
-    if (r.existLocal && r.existRemote) {
-      r.decision = "skipFolder";
-      folderInfo.remove(r.key);
-      folderInfo.addMustBeKeptChildrenCnt(getParentFolder(r.key));
-      return r;
-    }
   }
+
+  // save the memory, save the world!
+  // we have dealt with it, so we don't need it any more.
+  keptFolder.delete(r.key);
+  return r;
 };
 
 export const getSyncPlan = async (
@@ -580,7 +548,7 @@ export const getSyncPlan = async (
   );
   const totalCount = sortedKeys.length || 0;
 
-  const folderInfo = new FolderInfo();
+  const keptFolder = new Set<string>();
   for (let i = 0; i < sortedKeys.length; ++i) {
     const key = sortedKeys[i];
     const val = mixedStates[key];
@@ -593,11 +561,11 @@ export const getSyncPlan = async (
       // decide some folders
       // because the keys are sorted by length
       // so all the children must have been shown up before in the iteration
-      assignOperationToFolderInplace(val, folderInfo);
+      assignOperationToFolderInplace(val, keptFolder);
     } else {
       // get all operations of files
       // and at the same time get some helper info for folders
-      assignOperationToFileInplace(val, folderInfo);
+      assignOperationToFileInplace(val, keptFolder);
     }
   }
 
