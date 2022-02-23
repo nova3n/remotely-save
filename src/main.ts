@@ -85,7 +85,6 @@ export default class RemotelySavePlugin extends Plugin {
   currSyncMsg?: string;
   syncRibbon?: HTMLElement;
   autoRunIntervalID?: number;
-  ignoreAutoRemovedRecords?: Record<string, number>;
 
   async syncRun(triggerSource: SyncTriggerSourceType = "manual") {
     const getNotice = (x: string) => {
@@ -265,8 +264,6 @@ export default class RemotelySavePlugin extends Plugin {
       revokeDiv: undefined,
       revokeAuthSetting: undefined,
     }; // init
-
-    this.ignoreAutoRemovedRecords = {};
 
     this.currSyncMsg = "";
 
@@ -643,9 +640,7 @@ export default class RemotelySavePlugin extends Plugin {
   }
 
   async trash(x: string) {
-    this.ignoreAutoRemovedRecords[x] = Date.now();
     if (!(await this.app.vault.adapter.trashSystem(x))) {
-      this.ignoreAutoRemovedRecords[x] = Date.now();
       await this.app.vault.adapter.trashLocal(x);
     }
   }
