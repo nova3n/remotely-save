@@ -252,11 +252,14 @@ export const downloadFromRemote = async (
   vault: Vault,
   mtime: number,
   password: string = "",
-  remoteEncryptedKey: string = ""
+  remoteEncryptedKey: string = "",
+  skipSaving: boolean = false
 ) => {
   const isFolder = fileOrFolderPath.endsWith("/");
 
-  await mkdirpInVault(fileOrFolderPath, vault);
+  if (!skipSaving) {
+    await mkdirpInVault(fileOrFolderPath, vault);
+  }
 
   // the file is always local file
   // we need to encrypt it
@@ -264,6 +267,7 @@ export const downloadFromRemote = async (
   if (isFolder) {
     // mkdirp locally is enough
     // do nothing here
+    return new ArrayBuffer(0);
   } else {
     let downloadFile = fileOrFolderPath;
     if (password !== "") {
@@ -278,9 +282,12 @@ export const downloadFromRemote = async (
     if (password !== "") {
       localContent = await decryptArrayBuffer(remoteContent, password);
     }
-    await vault.adapter.writeBinary(fileOrFolderPath, localContent, {
-      mtime: mtime,
-    });
+    if (!skipSaving) {
+      await vault.adapter.writeBinary(fileOrFolderPath, localContent, {
+        mtime: mtime,
+      });
+    }
+    return localContent;
   }
 };
 
