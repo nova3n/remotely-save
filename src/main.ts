@@ -34,7 +34,7 @@ import {
 import { DEFAULT_S3_CONFIG } from "./remoteForS3";
 import { DEFAULT_WEBDAV_CONFIG } from "./remoteForWebdav";
 import { RemotelySaveSettingTab } from "./settings";
-import type { SyncStatusType } from "./sync";
+import { fetchMetadataFile, parseRemoteItems, SyncStatusType } from "./sync";
 import { doActualSync, getSyncPlan, isPasswordOk } from "./sync";
 import { messyConfigToNormal, normalConfigToMessy } from "./configPersist";
 
@@ -125,18 +125,18 @@ export default class RemotelySavePlugin extends Plugin {
 
       if (triggerSource === "dry") {
         getNotice(
-          "0/7 Remotely Save running in dry mode, not actual file changes would happen."
+          "0/9 Remotely Save running in dry mode, not actual file changes would happen."
         );
       }
 
       //log.info(`huh ${this.settings.password}`)
       getNotice(
-        `1/7 Remotely Save Sync Preparing (${this.settings.serviceType})`
+        `1/9 Remotely Save Sync Preparing (${this.settings.serviceType})`
       );
       this.syncStatus = "preparing";
 
-      getNotice("2/7 Starting to fetch remote meta data.");
-      this.syncStatus = "getting_remote_meta";
+      getNotice("2/9 Starting to fetch remote meta data.");
+      this.syncStatus = "getting_remote_files_list";
       const self = this;
       const client = new RemoteClient(
         this.settings.serviceType,
@@ -149,21 +149,8 @@ export default class RemotelySavePlugin extends Plugin {
       );
       const remoteRsp = await client.listFromRemote();
       log.info(remoteRsp);
-      const metadataOnRemote: MetadataOnRemote = {
-        deletions: [] as DeletionOnRemote[],
-      };
 
-      getNotice("3/7 Starting to fetch local meta data.");
-      this.syncStatus = "getting_local_meta";
-      const local = this.app.vault.getAllLoadedFiles();
-      const localHistory = await loadDeleteRenameHistoryTableByVault(
-        this.db,
-        this.settings.vaultRandomID
-      );
-      // log.info(local);
-      // log.info(localHistory);
-
-      getNotice("4/7 Checking password correct or not.");
+      getNotice("3/9 Checking password correct or not.");
       this.syncStatus = "checking_password";
       const passwordCheckResult = await isPasswordOk(
         remoteRsp.Contents,
@@ -174,17 +161,40 @@ export default class RemotelySavePlugin extends Plugin {
         throw Error(passwordCheckResult.reason);
       }
 
-      getNotice("5/7 Starting to generate sync plan.");
-      this.syncStatus = "generating_plan";
-      const syncPlanAndSortedKeys = await getSyncPlan(
+      getNotice("4/9 Trying to fetch extra meta data from remote.");
+      this.syncStatus = "getting_remote_extra_meta";
+      const { remoteStates, metadataFile } = await parseRemoteItems(
         remoteRsp.Contents,
-        local,
-        metadataOnRemote.deletions,
-        localHistory,
         this.db,
         this.settings.vaultRandomID,
         client.serviceType,
         this.settings.password
+      );
+      const metadataOnRemote = await fetchMetadataFile(
+        metadataFile,
+        client,
+        this.app.vault,
+        this.settings.password
+      );
+
+      getNotice("5/9 Starting to fetch local meta data.");
+      this.syncStatus = "getting_local_meta";
+      const local = this.app.vault.getAllLoadedFiles();
+      const localHistory = await loadDeleteRenameHistoryTableByVault(
+        this.db,
+        this.settings.vaultRandomID
+      );
+      // log.info(local);
+      // log.info(localHistory);
+
+      getNotice("6/9 Starting to generate sync plan.");
+      this.syncStatus = "generating_plan";
+      const syncPlanAndSortedKeys = await getSyncPlan(
+        remoteStates,
+        local,
+        metadataOnRemote.deletions,
+        localHistory,
+        client.serviceType
       );
       log.info(syncPlanAndSortedKeys.plan.mixedStates); // for debugging
       if (triggerSource !== "dry") {
@@ -199,7 +209,7 @@ export default class RemotelySavePlugin extends Plugin {
       // The operations below begins to write or delete (!!!) something.
 
       if (triggerSource !== "dry") {
-        getNotice("6/7 Remotely Save Sync data exchanging!");
+        getNotice("7/9 Remotely Save Sync data exchanging!");
 
         this.syncStatus = "syncing";
         await doActualSync(
@@ -215,11 +225,15 @@ export default class RemotelySavePlugin extends Plugin {
         );
       } else {
         this.syncStatus = "syncing";
-        getNotice("6/7 Remotely Save real sync is skipped in dry run mode.");
+        getNotice("7/9 Remotely Save real sync is skipped in dry run mode.");
       }
 
-      getNotice("7/7 Remotely Save finish!");
+      getNotice("8/9 Remotely Save Cleaning up some caches!");
       this.currSyncMsg = "";
+      this.syncStatus = "cleaning";
+      // TODO
+
+      getNotice("9/9 Remotely Save finish!");
       this.syncStatus = "finish";
       this.syncStatus = "idle";
 
@@ -282,20 +296,11 @@ export default class RemotelySavePlugin extends Plugin {
 
     this.registerEvent(
       this.app.vault.on("delete", async (fileOrFolder) => {
-        const EXPIRE_MILLISECONDS = 1000 * 10;
-        if (
-          this.ignoreAutoRemovedRecords[fileOrFolder.path] === undefined ||
-          this.ignoreAutoRemovedRecords[fileOrFolder.path] +
-            EXPIRE_MILLISECONDS <
-            Date.now()
-        ) {
-          await insertDeleteRecordByVault(
-            this.db,
-            fileOrFolder,
-            this.settings.vaultRandomID
-          );
-        }
-        delete this.ignoreAutoRemovedRecords[fileOrFolder.path];
+        await insertDeleteRecordByVault(
+          this.db,
+          fileOrFolder,
+          this.settings.vaultRandomID
+        );
       })
     );
 

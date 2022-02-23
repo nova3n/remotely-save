@@ -1,5 +1,10 @@
 import { TAbstractFile, TFile, TFolder, Vault } from "obsidian";
-import type { RemoteItem, SUPPORTED_SERVICES_TYPE } from "./baseTypes";
+import type {
+  RemoteItem,
+  SUPPORTED_SERVICES_TYPE,
+  DecisionType,
+  FileOrFolderMixedState,
+} from "./baseTypes";
 import {
   decryptBase32ToString,
   decryptBase64urlToString,
@@ -26,6 +31,7 @@ import {
   DeletionOnRemote,
   serializeMetadataOnRemote,
   deserializeMetadataOnRemote,
+  DEFAULT_FILE_NAME_FOR_METADATAONREMOTE,
 } from "./metadataOnRemote";
 
 import * as origLog from "loglevel";
@@ -35,44 +41,14 @@ const log = origLog.getLogger("rs-default");
 export type SyncStatusType =
   | "idle"
   | "preparing"
-  | "getting_remote_meta"
+  | "getting_remote_files_list"
+  | "getting_remote_extra_meta"
   | "getting_local_meta"
   | "checking_password"
   | "generating_plan"
   | "syncing"
+  | "cleaning"
   | "finish";
-
-type DecisionTypeForFile =
-  | "skipUploading" // special, mtimeLocal === mtimeRemote
-  | "uploadLocalDelHistToRemote" // "delLocalIfExists && delRemoteIfExists && cleanLocalDelHist && uploadLocalDelHistToRemote"
-  | "keepRemoteDelHist" // "delLocalIfExists && delRemoteIfExists && cleanLocalDelHist && keepRemoteDelHist"
-  | "uploadLocalToRemote" // "skipLocal && uploadLocalToRemote && cleanLocalDelHist && cleanRemoteDelHist"
-  | "downloadRemoteToLocal"; // "downloadRemoteToLocal && skipRemote && cleanLocalDelHist && cleanRemoteDelHist"
-
-type DecisionTypeForFolder =
-  | "createFolder"
-  | "delFolder"
-  | "uploadLocalDelHistToRemoteFolder"
-  | "keepRemoteDelHistFolder"
-  | "skipFolder";
-
-type DecisionType = DecisionTypeForFile | DecisionTypeForFolder;
-
-interface FileOrFolderMixedState {
-  key: string;
-  existLocal?: boolean;
-  existRemote?: boolean;
-  mtimeLocal?: number;
-  mtimeRemote?: number;
-  deltimeLocal?: number;
-  deltimeRemote?: number;
-  sizeLocal?: number;
-  sizeRemote?: number;
-  changeMtimeUsingMapping?: boolean;
-  decision?: DecisionType;
-  syncDone?: "done";
-  remoteEncryptedKey?: string;
-}
 
 export interface SyncPlanType {
   ts: number;
@@ -183,78 +159,122 @@ export const isPasswordOk = async (
   }
 };
 
-const ensembleMixedStates = async (
+export const parseRemoteItems = async (
   remote: RemoteItem[],
-  local: TAbstractFile[],
-  remoteDeleteHistory: DeletionOnRemote[],
-  localDeleteHistory: FileFolderHistoryRecord[],
   db: InternalDBs,
   vaultRandomID: string,
   remoteType: SUPPORTED_SERVICES_TYPE,
   password: string = ""
 ) => {
-  const results = {} as Record<string, FileOrFolderMixedState>;
+  const remoteStates = [] as FileOrFolderMixedState[];
+  let metadataFile: FileOrFolderMixedState = undefined;
+  if (remote === undefined) {
+    return {
+      remoteStates: remoteStates,
+      metadataFile: metadataFile,
+    };
+  }
 
-  if (remote !== undefined) {
-    for (const entry of remote) {
-      const remoteEncryptedKey = entry.key;
-      let key = remoteEncryptedKey;
-      if (password !== "") {
-        if (remoteEncryptedKey.startsWith(MAGIC_ENCRYPTED_PREFIX_BASE32)) {
-          key = await decryptBase32ToString(remoteEncryptedKey, password);
-        } else if (
-          remoteEncryptedKey.startsWith(MAGIC_ENCRYPTED_PREFIX_BASE64URL)
-        ) {
-          key = await decryptBase64urlToString(remoteEncryptedKey, password);
-        } else {
-          throw Error(`unexpected key=${remoteEncryptedKey}`);
-        }
-      }
-      const backwardMapping = await getSyncMetaMappingByRemoteKeyAndVault(
-        remoteType,
-        db,
-        key,
-        entry.lastModified,
-        entry.etag,
-        vaultRandomID
-      );
-
-      let r = {} as FileOrFolderMixedState;
-      if (backwardMapping !== undefined) {
-        key = backwardMapping.localKey;
-        r = {
-          key: key,
-          existRemote: true,
-          mtimeRemote: backwardMapping.localMtime || entry.lastModified,
-          sizeRemote: backwardMapping.localSize || entry.size,
-          remoteEncryptedKey: remoteEncryptedKey,
-          changeMtimeUsingMapping: true,
-        };
+  for (const entry of remote) {
+    const remoteEncryptedKey = entry.key;
+    let key = remoteEncryptedKey;
+    if (password !== "") {
+      if (remoteEncryptedKey.startsWith(MAGIC_ENCRYPTED_PREFIX_BASE32)) {
+        key = await decryptBase32ToString(remoteEncryptedKey, password);
+      } else if (
+        remoteEncryptedKey.startsWith(MAGIC_ENCRYPTED_PREFIX_BASE64URL)
+      ) {
+        key = await decryptBase64urlToString(remoteEncryptedKey, password);
       } else {
-        r = {
-          key: key,
-          existRemote: true,
-          mtimeRemote: entry.lastModified,
-          sizeRemote: entry.size,
-          remoteEncryptedKey: remoteEncryptedKey,
-          changeMtimeUsingMapping: false,
-        };
-      }
-      if (isHiddenPath(key)) {
-        continue;
-      }
-      if (results.hasOwnProperty(key)) {
-        results[key].key = r.key;
-        results[key].existRemote = r.existRemote;
-        results[key].mtimeRemote = r.mtimeRemote;
-        results[key].sizeRemote = r.sizeRemote;
-        results[key].remoteEncryptedKey = r.remoteEncryptedKey;
-        results[key].changeMtimeUsingMapping = r.changeMtimeUsingMapping;
-      } else {
-        results[key] = r;
-        results[key].existLocal = false;
+        throw Error(`unexpected key=${remoteEncryptedKey}`);
       }
     }
+    const backwardMapping = await getSyncMetaMappingByRemoteKeyAndVault(
+      remoteType,
+      db,
+      key,
+      entry.lastModified,
+      entry.etag,
+      vaultRandomID
+    );
+
+    let r = {} as FileOrFolderMixedState;
+    if (backwardMapping !== undefined) {
+      key = backwardMapping.localKey;
+      r = {
+        key: key,
+        existRemote: true,
+        mtimeRemote: backwardMapping.localMtime || entry.lastModified,
+        sizeRemote: backwardMapping.localSize || entry.size,
+        remoteEncryptedKey: remoteEncryptedKey,
+        changeMtimeUsingMapping: true,
+      };
+    } else {
+      r = {
+        key: key,
+        existRemote: true,
+        mtimeRemote: entry.lastModified,
+        sizeRemote: entry.size,
+        remoteEncryptedKey: remoteEncryptedKey,
+        changeMtimeUsingMapping: false,
+      };
+    }
+
+    if (r.key === DEFAULT_FILE_NAME_FOR_METADATAONREMOTE) {
+      metadataFile = Object.assign({}, r);
+    }
+
+    remoteStates.push(r);
+  }
+  return {
+    remoteStates: remoteStates,
+    metadataFile: metadataFile,
+  };
+};
+
+export const fetchMetadataFile = async (
+  metadataFile: FileOrFolderMixedState,
+  client: RemoteClient,
+  vault: Vault,
+  password: string = ""
+) => {
+  if (metadataFile === undefined) {
+    log.debug("no metadata file, so no fetch");
+    return {
+      deletions: [],
+    } as MetadataOnRemote;
+  }
+
+  const buf = await client.downloadFromRemote(
+    metadataFile.key,
+    vault,
+    metadataFile.mtimeRemote,
+    password,
+    metadataFile.remoteEncryptedKey,
+    true
+  );
+  const metadata = JSON.parse(
+    new TextDecoder().decode(buf)
+  ) as MetadataOnRemote;
+  return metadata;
+};
+
+const ensembleMixedStates = async (
+  remoteStates: FileOrFolderMixedState[],
+  local: TAbstractFile[],
+  remoteDeleteHistory: DeletionOnRemote[],
+  localDeleteHistory: FileFolderHistoryRecord[]
+) => {
+  const results = {} as Record<string, FileOrFolderMixedState>;
+
+  for (const r of remoteStates) {
+    const key = r.key;
+
+    if (isHiddenPath(key)) {
+      continue;
+    }
+    results[key] = r;
+    results[key].existLocal = false;
   }
 
   for (const entry of local) {
@@ -523,30 +543,22 @@ const assignOperationToFolderInplace = (
 };
 
 export const getSyncPlan = async (
-  remote: RemoteItem[],
+  remoteStates: FileOrFolderMixedState[],
   local: TAbstractFile[],
   remoteDeleteHistory: DeletionOnRemote[],
   localDeleteHistory: FileFolderHistoryRecord[],
-  db: InternalDBs,
-  vaultRandomID: string,
-  remoteType: SUPPORTED_SERVICES_TYPE,
-  password: string = ""
+  remoteType: SUPPORTED_SERVICES_TYPE
 ) => {
   const mixedStates = await ensembleMixedStates(
-    remote,
+    remoteStates,
     local,
     remoteDeleteHistory,
-    localDeleteHistory,
-    db,
-    vaultRandomID,
-    remoteType,
-    password
+    localDeleteHistory
   );
 
   const sortedKeys = Object.keys(mixedStates).sort(
     (k1, k2) => k2.length - k1.length
   );
-  const totalCount = sortedKeys.length || 0;
 
   const keptFolder = new Set<string>();
   for (let i = 0; i < sortedKeys.length; ++i) {
