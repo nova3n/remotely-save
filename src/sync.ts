@@ -498,20 +498,13 @@ const assignOperationToFolderInplace = (
 
     if (r.deltimeLocal !== undefined || r.deltimeRemote !== undefined) {
       // it has some deletion "commands"
-      if (r.existLocal || r.existRemote) {
-        r.decision = "delFolder";
+      if (
+        r.deltimeLocal !== undefined &&
+        r.deltimeLocal >= (r.deltimeRemote !== undefined ? r.deltimeRemote : -1)
+      ) {
+        r.decision = "uploadLocalDelHistToRemoteFolder";
       } else {
-        // no exists
-        // actually deleted before???
-        if (
-          r.deltimeLocal !== undefined &&
-          r.deltimeLocal >=
-            (r.deltimeRemote !== undefined ? r.deltimeRemote : -1)
-        ) {
-          r.decision = "uploadLocalDelHistToRemoteFolder";
-        } else {
-          r.decision = "keepRemoteDelHistFolder";
-        }
+        r.decision = "keepRemoteDelHistFolder";
       }
     } else {
       // it does not have any deletion commands
@@ -542,6 +535,13 @@ const assignOperationToFolderInplace = (
   return r;
 };
 
+const DELETION_DECISIONS: Set<DecisionType> = new Set([
+  "uploadLocalDelHistToRemote",
+  "keepRemoteDelHist",
+  "uploadLocalDelHistToRemoteFolder",
+  "keepRemoteDelHistFolder",
+]);
+
 export const getSyncPlan = async (
   remoteStates: FileOrFolderMixedState[],
   local: TAbstractFile[],
@@ -560,6 +560,8 @@ export const getSyncPlan = async (
     (k1, k2) => k2.length - k1.length
   );
 
+  const deletions: DeletionOnRemote[] = [];
+
   const keptFolder = new Set<string>();
   for (let i = 0; i < sortedKeys.length; ++i) {
     const key = sortedKeys[i];
@@ -575,6 +577,32 @@ export const getSyncPlan = async (
       // and at the same time get some helper info for folders
       assignOperationToFileInplace(val, keptFolder);
     }
+
+    if (DELETION_DECISIONS.has(val.decision)) {
+      if (val.decision === "uploadLocalDelHistToRemote") {
+        deletions.push({
+          key: key,
+          actionWhen: val.deltimeLocal,
+        });
+      } else if (val.decision === "keepRemoteDelHist") {
+        deletions.push({
+          key: key,
+          actionWhen: val.deltimeRemote,
+        });
+      } else if (val.decision === "uploadLocalDelHistToRemoteFolder") {
+        deletions.push({
+          key: key,
+          actionWhen: val.deltimeLocal,
+        });
+      } else if (val.decision === "keepRemoteDelHistFolder") {
+        deletions.push({
+          key: key,
+          actionWhen: val.deltimeRemote,
+        });
+      } else {
+        throw Error(`do not know how to delete for decision ${val.decision}`);
+      }
+    }
   }
 
   const plan = {
@@ -585,7 +613,49 @@ export const getSyncPlan = async (
   return {
     plan: plan,
     sortedKeys: sortedKeys,
+    deletions: deletions,
   };
+};
+
+const uploadExtraMeta = async (
+  client: RemoteClient,
+  metadataFile: FileOrFolderMixedState | undefined,
+  deletions: DeletionOnRemote[],
+  password: string = ""
+) => {
+  if (deletions === undefined || deletions.length === 0) {
+    return;
+  }
+
+  const key = DEFAULT_FILE_NAME_FOR_METADATAONREMOTE;
+  let remoteEncryptedKey = key;
+
+  if (password !== "") {
+    if (metadataFile === undefined) {
+      remoteEncryptedKey = undefined;
+    } else {
+      remoteEncryptedKey = metadataFile.remoteEncryptedKey;
+    }
+    if (remoteEncryptedKey === undefined || remoteEncryptedKey === "") {
+      // remoteEncryptedKey = await encryptStringToBase32(key, password);
+      remoteEncryptedKey = await encryptStringToBase64url(key, password);
+    }
+  }
+
+  const resultText = serializeMetadataOnRemote({
+    deletions: deletions,
+  });
+
+  await client.uploadToRemote(
+    key,
+    undefined,
+    false,
+    password,
+    remoteEncryptedKey,
+    undefined,
+    true,
+    resultText
+  );
 };
 
 const dispatchOperationToActual = async (
@@ -701,7 +771,7 @@ const dispatchOperationToActual = async (
       );
     }
     await clearDeleteRenameHistoryOfKeyAndVault(db, r.key, vaultRandomID);
-  } else if (r.decision === "delFolder") {
+  } else if (r.decision === "uploadLocalDelHistToRemoteFolder") {
     if (r.existLocal) {
       await localDeleteFunc(r.key);
     }
@@ -710,10 +780,13 @@ const dispatchOperationToActual = async (
     }
     await keepDeleteRecordsFunc(r.key);
     await clearDeleteRenameHistoryOfKeyAndVault(db, r.key, vaultRandomID);
-  } else if (r.decision === "uploadLocalDelHistToRemoteFolder") {
-    await keepDeleteRecordsFunc(r.key);
-    await clearDeleteRenameHistoryOfKeyAndVault(db, r.key, vaultRandomID);
   } else if (r.decision === "keepRemoteDelHistFolder") {
+    if (r.existLocal) {
+      await localDeleteFunc(r.key);
+    }
+    if (r.existRemote) {
+      await client.deleteFromRemote(r.key, password, remoteEncryptedKey);
+    }
     await keepDeleteRecordsFunc(r.key);
     await clearDeleteRenameHistoryOfKeyAndVault(db, r.key, vaultRandomID);
   } else if (r.decision === "skipFolder") {
@@ -730,12 +803,18 @@ export const doActualSync = async (
   vault: Vault,
   syncPlan: SyncPlanType,
   sortedKeys: string[],
+  metadataFile: FileOrFolderMixedState,
+  deletions: DeletionOnRemote[],
   password: string = "",
   callbackSyncProcess?: any
 ) => {
   const mixedStates = syncPlan.mixedStates;
   let i = 0;
   const totalCount = sortedKeys.length || 0;
+
+  log.debug(`start syncing extra data firstly`);
+  await uploadExtraMeta(client, metadataFile, deletions, password);
+  log.debug(`finish syncing extra data firstly`);
 
   for (let i = 0; i < sortedKeys.length; ++i) {
     const key = sortedKeys[i];

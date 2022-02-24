@@ -90,7 +90,6 @@ type DecisionTypeForFile =
 
 type DecisionTypeForFolder =
   | "createFolder"
-  | "delFolder"
   | "uploadLocalDelHistToRemoteFolder"
   | "keepRemoteDelHistFolder"
   | "skipFolder";

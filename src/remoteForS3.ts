@@ -99,7 +99,9 @@ export const uploadToRemote = async (
   vault: Vault,
   isRecursively: boolean = false,
   password: string = "",
-  remoteEncryptedKey: string = ""
+  remoteEncryptedKey: string = "",
+  uploadRaw: boolean = false,
+  rawContent: string | ArrayBuffer = ""
 ) => {
   let uploadFile = fileOrFolderPath;
   if (password !== "") {
@@ -112,6 +114,9 @@ export const uploadToRemote = async (
   if (isFolder && isRecursively) {
     throw Error("upload function doesn't implement recursive function yet!");
   } else if (isFolder && !isRecursively) {
+    if (uploadRaw) {
+      throw Error(`you specify uploadRaw, but you also provide a folder key!`);
+    }
     // folder
     const contentType = DEFAULT_CONTENT_TYPE;
     await s3Client.send(
@@ -133,7 +138,16 @@ export const uploadToRemote = async (
           mime.lookup(fileOrFolderPath) || DEFAULT_CONTENT_TYPE
         ) || DEFAULT_CONTENT_TYPE;
     }
-    const localContent = await vault.adapter.readBinary(fileOrFolderPath);
+    let localContent = undefined;
+    if (uploadRaw) {
+      if (typeof rawContent === "string") {
+        localContent = new TextEncoder().encode(rawContent);
+      } else {
+        localContent = rawContent;
+      }
+    } else {
+      localContent = await vault.adapter.readBinary(fileOrFolderPath);
+    }
     let remoteContent = localContent;
     if (password !== "") {
       remoteContent = await encryptArrayBuffer(localContent, password);

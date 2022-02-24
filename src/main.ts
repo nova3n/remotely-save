@@ -189,18 +189,18 @@ export default class RemotelySavePlugin extends Plugin {
 
       getNotice("6/9 Starting to generate sync plan.");
       this.syncStatus = "generating_plan";
-      const syncPlanAndSortedKeys = await getSyncPlan(
+      const { plan, sortedKeys, deletions } = await getSyncPlan(
         remoteStates,
         local,
         metadataOnRemote.deletions,
         localHistory,
         client.serviceType
       );
-      log.info(syncPlanAndSortedKeys.plan.mixedStates); // for debugging
+      log.info(plan.mixedStates); // for debugging
       if (triggerSource !== "dry") {
         await insertSyncPlanRecordByVault(
           this.db,
-          syncPlanAndSortedKeys.plan,
+          plan,
           this.settings.vaultRandomID
         );
       }
@@ -217,8 +217,10 @@ export default class RemotelySavePlugin extends Plugin {
           this.db,
           this.settings.vaultRandomID,
           this.app.vault,
-          syncPlanAndSortedKeys.plan,
-          syncPlanAndSortedKeys.sortedKeys,
+          plan,
+          sortedKeys,
+          metadataFile,
+          deletions,
           this.settings.password,
           (i: number, totalCount: number, pathName: string, decision: string) =>
             self.setCurrSyncMsg(i, totalCount, pathName, decision)
