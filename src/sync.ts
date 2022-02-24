@@ -371,7 +371,8 @@ const ensembleMixedStates = async (
 
 const assignOperationToFileInplace = (
   origRecord: FileOrFolderMixedState,
-  keptFolder: Set<string>
+  keptFolder: Set<string>,
+  password: string = ""
 ) => {
   let r = origRecord;
 
@@ -416,8 +417,19 @@ const assignOperationToFileInplace = (
       r.mtimeLocal >= deltime_remote
     ) {
       if (r.mtimeLocal === r.mtimeRemote) {
-        // mtime the same, do nothing
-        r.decision = "skipUploading";
+        // mtime the same
+        if (password === "") {
+          // no password, we can also compare the sizes!
+          if (r.sizeLocal === r.sizeRemote) {
+            r.decision = "skipUploading";
+          } else {
+            r.decision = "uploadLocalToRemote";
+          }
+        } else {
+          // we have password, then the sizes are always unequal
+          // we can only rely on mtime
+          r.decision = "skipUploading";
+        }
       } else {
         r.decision = "uploadLocalToRemote";
       }
@@ -483,7 +495,8 @@ const assignOperationToFileInplace = (
 
 const assignOperationToFolderInplace = (
   origRecord: FileOrFolderMixedState,
-  keptFolder: Set<string>
+  keptFolder: Set<string>,
+  password: string = ""
 ) => {
   let r = origRecord;
 
@@ -547,7 +560,8 @@ export const getSyncPlan = async (
   local: TAbstractFile[],
   remoteDeleteHistory: DeletionOnRemote[],
   localDeleteHistory: FileFolderHistoryRecord[],
-  remoteType: SUPPORTED_SERVICES_TYPE
+  remoteType: SUPPORTED_SERVICES_TYPE,
+  password: string = ""
 ) => {
   const mixedStates = await ensembleMixedStates(
     remoteStates,
@@ -571,11 +585,11 @@ export const getSyncPlan = async (
       // decide some folders
       // because the keys are sorted by length
       // so all the children must have been shown up before in the iteration
-      assignOperationToFolderInplace(val, keptFolder);
+      assignOperationToFolderInplace(val, keptFolder, password);
     } else {
       // get all operations of files
       // and at the same time get some helper info for folders
-      assignOperationToFileInplace(val, keptFolder);
+      assignOperationToFileInplace(val, keptFolder, password);
     }
 
     if (DELETION_DECISIONS.has(val.decision)) {
