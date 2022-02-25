@@ -196,7 +196,8 @@ export default class RemotelySavePlugin extends Plugin {
         local,
         metadataOnRemote.deletions,
         localHistory,
-        client.serviceType
+        client.serviceType,
+        this.settings.password
       );
       log.info(plan.mixedStates); // for debugging
       if (triggerSource !== "dry") {
