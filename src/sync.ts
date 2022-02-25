@@ -422,16 +422,20 @@ const assignOperationToFileInplace = (
           // no password, we can also compare the sizes!
           if (r.sizeLocal === r.sizeRemote) {
             r.decision = "skipUploading";
+            r.decisionBranch = 1;
           } else {
             r.decision = "uploadLocalToRemote";
+            r.decisionBranch = 2;
           }
         } else {
           // we have password, then the sizes are always unequal
           // we can only rely on mtime
           r.decision = "skipUploading";
+          r.decisionBranch = 3;
         }
       } else {
         r.decision = "uploadLocalToRemote";
+        r.decisionBranch = 4;
       }
       keptFolder.add(getParentFolder(r.key));
       return r;
@@ -449,6 +453,7 @@ const assignOperationToFileInplace = (
       r.mtimeRemote >= deltime_remote
     ) {
       r.decision = "downloadRemoteToLocal";
+      r.decisionBranch = 5;
       keptFolder.add(getParentFolder(r.key));
       return r;
     }
@@ -465,6 +470,7 @@ const assignOperationToFileInplace = (
       r.deltimeLocal >= deltime_remote
     ) {
       r.decision = "uploadLocalDelHistToRemote";
+      r.decisionBranch = 6;
       if (r.existLocal || r.existRemote) {
         // actual deletion would happen
       }
@@ -483,6 +489,7 @@ const assignOperationToFileInplace = (
       r.deltimeRemote >= deltimeLocal
     ) {
       r.decision = "keepRemoteDelHist";
+      r.decisionBranch = 7;
       if (r.existLocal || r.existRemote) {
         // actual deletion would happen
       }
@@ -516,8 +523,10 @@ const assignOperationToFolderInplace = (
         r.deltimeLocal >= (r.deltimeRemote !== undefined ? r.deltimeRemote : -1)
       ) {
         r.decision = "uploadLocalDelHistToRemoteFolder";
+        r.decisionBranch = 8;
       } else {
         r.decision = "keepRemoteDelHistFolder";
+        r.decisionBranch = 9;
       }
     } else {
       // it does not have any deletion commands
@@ -525,8 +534,10 @@ const assignOperationToFolderInplace = (
       keptFolder.add(getParentFolder(r.key));
       if (r.existLocal && r.existRemote) {
         r.decision = "skipFolder";
+        r.decisionBranch = 10;
       } else if (r.existLocal || r.existRemote) {
         r.decision = "createFolder";
+        r.decisionBranch = 11;
       } else {
         throw Error(
           `Error: Folder ${r.key} doesn't exist locally and remotely but is marked must be kept. Abort.`
@@ -539,8 +550,10 @@ const assignOperationToFolderInplace = (
     keptFolder.add(getParentFolder(r.key));
     if (r.existLocal && r.existRemote) {
       r.decision = "skipFolder";
+      r.decisionBranch = 12;
     } else if (r.existLocal || r.existRemote) {
       r.decision = "createFolder";
+      r.decisionBranch = 13;
     } else {
       throw Error(
         `Error: Folder ${r.key} doesn't exist locally and remotely but is marked must be kept. Abort.`

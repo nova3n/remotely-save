@@ -108,6 +108,7 @@ export interface FileOrFolderMixedState {
   sizeRemote?: number;
   changeMtimeUsingMapping?: boolean;
   decision?: DecisionType;
+  decisionBranch?: number;
   syncDone?: "done";
   remoteEncryptedKey?: string;
 }
