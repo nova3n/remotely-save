@@ -521,10 +521,16 @@ const assignOperationToFolderInplace = (
       }
     } else {
       // it does not have any deletion commands
-      // keep it as is, and skip it!
-      r.decision = "skipFolder";
-      if (r.existLocal || r.existRemote) {
-        keptFolder.add(getParentFolder(r.key));
+      // keep it as is, and create it if necessary
+      keptFolder.add(getParentFolder(r.key));
+      if (r.existLocal && r.existRemote) {
+        r.decision = "skipFolder";
+      } else if (r.existLocal || r.existRemote) {
+        r.decision = "createFolder";
+      } else {
+        throw Error(
+          `Error: Folder ${r.key} doesn't exist locally and remotely but is marked must be kept. Abort.`
+        );
       }
     }
   } else {
