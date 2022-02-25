@@ -680,7 +680,6 @@ const dispatchOperationToActual = async (
   db: InternalDBs,
   vault: Vault,
   localDeleteFunc: any,
-  keepDeleteRecordsFunc: any,
   password: string = ""
 ) => {
   let remoteEncryptedKey = key;
@@ -705,17 +704,14 @@ const dispatchOperationToActual = async (
     if (r.existRemote) {
       await client.deleteFromRemote(r.key, password, remoteEncryptedKey);
     }
-    await keepDeleteRecordsFunc(r.key);
     await clearDeleteRenameHistoryOfKeyAndVault(db, r.key, vaultRandomID);
   } else if (r.decision === "keepRemoteDelHist") {
-    await keepDeleteRecordsFunc(r.key);
     if (r.existLocal) {
       await localDeleteFunc(r.key);
     }
     if (r.existRemote) {
       await client.deleteFromRemote(r.key, password, remoteEncryptedKey);
     }
-    await keepDeleteRecordsFunc(r.key);
     await clearDeleteRenameHistoryOfKeyAndVault(db, r.key, vaultRandomID);
   } else if (r.decision === "uploadLocalToRemote") {
     if (
@@ -750,7 +746,7 @@ const dispatchOperationToActual = async (
     }
     await clearDeleteRenameHistoryOfKeyAndVault(db, r.key, vaultRandomID);
   } else if (r.decision === "downloadRemoteToLocal") {
-    // await mkdirpInVault(r.key, vault); /* should be unnecessary */
+    await mkdirpInVault(r.key, vault); /* should be unnecessary */
     await client.downloadFromRemote(
       r.key,
       vault,
@@ -792,7 +788,6 @@ const dispatchOperationToActual = async (
     if (r.existRemote) {
       await client.deleteFromRemote(r.key, password, remoteEncryptedKey);
     }
-    await keepDeleteRecordsFunc(r.key);
     await clearDeleteRenameHistoryOfKeyAndVault(db, r.key, vaultRandomID);
   } else if (r.decision === "keepRemoteDelHistFolder") {
     if (r.existLocal) {
@@ -801,7 +796,6 @@ const dispatchOperationToActual = async (
     if (r.existRemote) {
       await client.deleteFromRemote(r.key, password, remoteEncryptedKey);
     }
-    await keepDeleteRecordsFunc(r.key);
     await clearDeleteRenameHistoryOfKeyAndVault(db, r.key, vaultRandomID);
   } else if (r.decision === "skipFolder") {
     // do nothing!
@@ -819,6 +813,7 @@ export const doActualSync = async (
   sortedKeys: string[],
   metadataFile: FileOrFolderMixedState,
   deletions: DeletionOnRemote[],
+  localDeleteFunc: any,
   password: string = "",
   callbackSyncProcess?: any
 ) => {
@@ -847,8 +842,7 @@ export const doActualSync = async (
       client,
       db,
       vault,
-      (tmp: any) => tmp,
-      (tmp: any) => tmp,
+      localDeleteFunc,
       password
     );
     log.debug(`finished ${key}`);
@@ -862,8 +856,7 @@ export const doActualSync = async (
     //       client,
     //       db,
     //       vault,
-    //       (tmp: any) => tmp,
-    //       (tmp: any) => tmp,
+    //       localDeleteFunc,
     //       password
     //     )
     //   )

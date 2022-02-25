@@ -123,19 +123,21 @@ export default class RemotelySavePlugin extends Plugin {
         );
       }
 
+      const MAX_STEPS = 8;
+
       if (triggerSource === "dry") {
         getNotice(
-          "0/9 Remotely Save running in dry mode, not actual file changes would happen."
+          `0/${MAX_STEPS} Remotely Save running in dry mode, not actual file changes would happen.`
         );
       }
 
       //log.info(`huh ${this.settings.password}`)
       getNotice(
-        `1/9 Remotely Save Sync Preparing (${this.settings.serviceType})`
+        `1/${MAX_STEPS} Remotely Save Sync Preparing (${this.settings.serviceType})`
       );
       this.syncStatus = "preparing";
 
-      getNotice("2/9 Starting to fetch remote meta data.");
+      getNotice(`2/${MAX_STEPS} Starting to fetch remote meta data.`);
       this.syncStatus = "getting_remote_files_list";
       const self = this;
       const client = new RemoteClient(
@@ -150,7 +152,7 @@ export default class RemotelySavePlugin extends Plugin {
       const remoteRsp = await client.listFromRemote();
       log.info(remoteRsp);
 
-      getNotice("3/9 Checking password correct or not.");
+      getNotice(`3/${MAX_STEPS} Checking password correct or not.`);
       this.syncStatus = "checking_password";
       const passwordCheckResult = await isPasswordOk(
         remoteRsp.Contents,
@@ -161,7 +163,7 @@ export default class RemotelySavePlugin extends Plugin {
         throw Error(passwordCheckResult.reason);
       }
 
-      getNotice("4/9 Trying to fetch extra meta data from remote.");
+      getNotice(`4/${MAX_STEPS} Trying to fetch extra meta data from remote.`);
       this.syncStatus = "getting_remote_extra_meta";
       const { remoteStates, metadataFile } = await parseRemoteItems(
         remoteRsp.Contents,
@@ -177,7 +179,7 @@ export default class RemotelySavePlugin extends Plugin {
         this.settings.password
       );
 
-      getNotice("5/9 Starting to fetch local meta data.");
+      getNotice(`5/${MAX_STEPS} Starting to fetch local meta data.`);
       this.syncStatus = "getting_local_meta";
       const local = this.app.vault.getAllLoadedFiles();
       const localHistory = await loadDeleteRenameHistoryTableByVault(
@@ -187,7 +189,7 @@ export default class RemotelySavePlugin extends Plugin {
       // log.info(local);
       // log.info(localHistory);
 
-      getNotice("6/9 Starting to generate sync plan.");
+      getNotice(`6/${MAX_STEPS} Starting to generate sync plan.`);
       this.syncStatus = "generating_plan";
       const { plan, sortedKeys, deletions } = await getSyncPlan(
         remoteStates,
@@ -209,7 +211,7 @@ export default class RemotelySavePlugin extends Plugin {
       // The operations below begins to write or delete (!!!) something.
 
       if (triggerSource !== "dry") {
-        getNotice("7/9 Remotely Save Sync data exchanging!");
+        getNotice(`7/${MAX_STEPS} Remotely Save Sync data exchanging!`);
 
         this.syncStatus = "syncing";
         await doActualSync(
@@ -221,21 +223,19 @@ export default class RemotelySavePlugin extends Plugin {
           sortedKeys,
           metadataFile,
           deletions,
+          (key: string) => self.trash(key),
           this.settings.password,
           (i: number, totalCount: number, pathName: string, decision: string) =>
             self.setCurrSyncMsg(i, totalCount, pathName, decision)
         );
       } else {
         this.syncStatus = "syncing";
-        getNotice("7/9 Remotely Save real sync is skipped in dry run mode.");
+        getNotice(
+          `7/${MAX_STEPS} Remotely Save real sync is skipped in dry run mode.`
+        );
       }
 
-      getNotice("8/9 Remotely Save Cleaning up some caches!");
-      this.currSyncMsg = "";
-      this.syncStatus = "cleaning";
-      // TODO
-
-      getNotice("9/9 Remotely Save finish!");
+      getNotice(`8/${MAX_STEPS} Remotely Save finish!`);
       this.syncStatus = "finish";
       this.syncStatus = "idle";
 
