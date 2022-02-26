@@ -32,6 +32,7 @@ import {
   serializeMetadataOnRemote,
   deserializeMetadataOnRemote,
   DEFAULT_FILE_NAME_FOR_METADATAONREMOTE,
+  isEqualMetadataOnRemote,
 } from "./metadataOnRemote";
 
 import * as origLog from "loglevel";
@@ -653,6 +654,7 @@ export const getSyncPlan = async (
 const uploadExtraMeta = async (
   client: RemoteClient,
   metadataFile: FileOrFolderMixedState | undefined,
+  origMetadata: MetadataOnRemote | undefined,
   deletions: DeletionOnRemote[],
   password: string = ""
 ) => {
@@ -675,9 +677,18 @@ const uploadExtraMeta = async (
     }
   }
 
-  const resultText = serializeMetadataOnRemote({
+  const newMetadata: MetadataOnRemote = {
     deletions: deletions,
-  });
+  };
+
+  if (isEqualMetadataOnRemote(origMetadata, newMetadata)) {
+    log.debug(
+      "metadata are the same, no need to re-generate and re-upload it."
+    );
+    return;
+  }
+
+  const resultText = serializeMetadataOnRemote(newMetadata);
 
   await client.uploadToRemote(
     key,
@@ -831,6 +842,7 @@ export const doActualSync = async (
   syncPlan: SyncPlanType,
   sortedKeys: string[],
   metadataFile: FileOrFolderMixedState,
+  origMetadata: MetadataOnRemote,
   deletions: DeletionOnRemote[],
   localDeleteFunc: any,
   password: string = "",
@@ -841,7 +853,13 @@ export const doActualSync = async (
   const totalCount = sortedKeys.length || 0;
 
   log.debug(`start syncing extra data firstly`);
-  await uploadExtraMeta(client, metadataFile, deletions, password);
+  await uploadExtraMeta(
+    client,
+    metadataFile,
+    origMetadata,
+    deletions,
+    password
+  );
   log.debug(`finish syncing extra data firstly`);
 
   for (let i = 0; i < sortedKeys.length; ++i) {

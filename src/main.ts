@@ -172,7 +172,7 @@ export default class RemotelySavePlugin extends Plugin {
         client.serviceType,
         this.settings.password
       );
-      const metadataOnRemote = await fetchMetadataFile(
+      const origMetadataOnRemote = await fetchMetadataFile(
         metadataFile,
         client,
         this.app.vault,
@@ -194,7 +194,7 @@ export default class RemotelySavePlugin extends Plugin {
       const { plan, sortedKeys, deletions } = await getSyncPlan(
         remoteStates,
         local,
-        metadataOnRemote.deletions,
+        origMetadataOnRemote.deletions,
         localHistory,
         client.serviceType,
         this.settings.password
@@ -223,6 +223,7 @@ export default class RemotelySavePlugin extends Plugin {
           plan,
           sortedKeys,
           metadataFile,
+          origMetadataOnRemote,
           deletions,
           (key: string) => self.trash(key),
           this.settings.password,
