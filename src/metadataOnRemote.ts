@@ -1,12 +1,17 @@
 import isEqual from "lodash/isEqual";
+import { base64url } from "rfc4648";
+import { reverseString } from "./misc";
 
 const DEFAULT_README_FOR_METADATAONREMOTE =
-  "Do NOT edit or delete the file manually. This file is for the plugin remotely-save to store some necessary meta data on the remote services.";
+  "Do NOT edit or delete the file manually. This file is for the plugin remotely-save to store some necessary meta data on the remote services. Its content is slightly obfuscated.";
 
 const DEFAULT_VERSION_FOR_METADATAONREMOTE = "20220220";
 
 export const DEFAULT_FILE_NAME_FOR_METADATAONREMOTE =
   "_remotely-save-metadata-on-remote.json";
+
+export const DEFAULT_FILE_NAME_FOR_METADATAONREMOTE2 =
+  "_remotely-save-metadata-on-remote.bin";
 
 export interface DeletionOnRemote {
   key: string;
@@ -14,9 +19,8 @@ export interface DeletionOnRemote {
 }
 
 export interface MetadataOnRemote {
-  _readme?: string;
-  _version?: string;
-  _generatedWhen?: number;
+  version?: string;
+  generatedWhen?: number;
   deletions?: DeletionOnRemote[];
 }
 
@@ -35,27 +39,49 @@ export const isEqualMetadataOnRemote = (
 
 export const serializeMetadataOnRemote = (x: MetadataOnRemote) => {
   const y = x;
-  if (y["_readme"] === undefined) {
-    y["_readme"] = DEFAULT_README_FOR_METADATAONREMOTE;
+
+  if (y["version"] === undefined) {
+    y["version"] === DEFAULT_VERSION_FOR_METADATAONREMOTE;
   }
-  if (y["_version"] === undefined) {
-    y["_version"] === DEFAULT_VERSION_FOR_METADATAONREMOTE;
-  }
-  if (y["_generatedWhen"] === undefined) {
-    y["_generatedWhen"] = Date.now();
+  if (y["generatedWhen"] === undefined) {
+    y["generatedWhen"] = Date.now();
   }
   if (y["deletions"] === undefined) {
     y["deletions"] = [];
   }
-  return JSON.stringify(x, null, 2);
+
+  const z = {
+    readme: DEFAULT_README_FOR_METADATAONREMOTE,
+    d: reverseString(
+      base64url.stringify(Buffer.from(JSON.stringify(x), "utf-8"), {
+        pad: false,
+      })
+    ),
+  };
+
+  return JSON.stringify(z, null, 2);
 };
 
-export const deserializeMetadataOnRemote = (x: string) => {
-  const y1: any = JSON.parse(x);
-  // TODO: any validations?
-  const y2 = y1 as MetadataOnRemote;
-  if (y2["deletions"] === undefined) {
-    y2["deletions"] = [];
+export const deserializeMetadataOnRemote = (x: string | ArrayBuffer) => {
+  let y1 = "";
+  if (typeof x === "string") {
+    y1 = x;
+  } else {
+    y1 = new TextDecoder().decode(x);
   }
-  return y2;
+  const y2: any = JSON.parse(y1);
+
+  if (!("readme" in y2 && "d" in y2)) {
+    throw Error("invalid remote meta data file!");
+  }
+
+  const y3 = JSON.parse(
+    (
+      base64url.parse(reverseString(y2["d"]), {
+        out: Buffer.allocUnsafe as any,
+        loose: true,
+      }) as Buffer
+    ).toString("utf-8")
+  ) as MetadataOnRemote;
+  return y3;
 };

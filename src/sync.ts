@@ -32,6 +32,7 @@ import {
   serializeMetadataOnRemote,
   deserializeMetadataOnRemote,
   DEFAULT_FILE_NAME_FOR_METADATAONREMOTE,
+  DEFAULT_FILE_NAME_FOR_METADATAONREMOTE2,
   isEqualMetadataOnRemote,
 } from "./metadataOnRemote";
 
@@ -224,6 +225,11 @@ export const parseRemoteItems = async (
     if (r.key === DEFAULT_FILE_NAME_FOR_METADATAONREMOTE) {
       metadataFile = Object.assign({}, r);
     }
+    if (r.key === DEFAULT_FILE_NAME_FOR_METADATAONREMOTE2) {
+      throw Error(
+        `A reserved file name ${r.key} has been found. You may upgrade the plugin to latest version to try to deal with it.`
+      );
+    }
 
     remoteStates.push(r);
   }
@@ -254,9 +260,7 @@ export const fetchMetadataFile = async (
     metadataFile.remoteEncryptedKey,
     true
   );
-  const metadata = JSON.parse(
-    new TextDecoder().decode(buf)
-  ) as MetadataOnRemote;
+  const metadata = deserializeMetadataOnRemote(buf);
   return metadata;
 };
 
