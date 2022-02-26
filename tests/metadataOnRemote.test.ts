@@ -71,14 +71,14 @@ describe("Metadata operations tests", () => {
         { key: "xxxx", actionWhen: 1 },
         { key: "yyy", actionWhen: 2 },
       ],
-      _generatedWhen: 1,
+      generatedWhen: 1,
     };
     const b: MetadataOnRemote = {
       deletions: [
         { key: "xxx", actionWhen: 1 },
         { key: "yyy", actionWhen: 2 },
       ],
-      _generatedWhen: 2,
+      generatedWhen: 2,
     };
 
     expect(isEqualMetadataOnRemote(a, b));
