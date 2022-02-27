@@ -40,6 +40,7 @@ import { messyConfigToNormal, normalConfigToMessy } from "./configPersist";
 
 import * as origLog from "loglevel";
 import { DeletionOnRemote, MetadataOnRemote } from "./metadataOnRemote";
+import { SyncAlgoV2Modal } from "./syncAlgoV2Notice";
 const log = origLog.getLogger("rs-default");
 
 const DEFAULT_SETTINGS: RemotelySavePluginSettings = {
@@ -52,6 +53,7 @@ const DEFAULT_SETTINGS: RemotelySavePluginSettings = {
   currLogLevel: "info",
   vaultRandomID: "",
   autoRunEveryMilliseconds: -1,
+  agreeToUploadExtraMetadata: false,
 };
 
 interface OAuth2Info {
@@ -526,16 +528,9 @@ export default class RemotelySavePlugin extends Plugin {
     //   log.info("click", evt);
     // });
 
-    if (
-      this.settings.autoRunEveryMilliseconds !== undefined &&
-      this.settings.autoRunEveryMilliseconds !== null &&
-      this.settings.autoRunEveryMilliseconds > 0
-    ) {
-      const intervalID = window.setInterval(() => {
-        this.syncRun("auto");
-      }, this.settings.autoRunEveryMilliseconds);
-      this.autoRunIntervalID = intervalID;
-      this.registerInterval(intervalID);
+    if (!this.settings.agreeToUploadExtraMetadata) {
+      const syncAlgoV2Modal = new SyncAlgoV2Modal(this.app, this);
+      syncAlgoV2Modal.open();
     }
   }
 
@@ -656,6 +651,25 @@ export default class RemotelySavePlugin extends Plugin {
 
   async prepareDB() {
     this.db = await prepareDBs(this.settings.vaultRandomID);
+  }
+
+  enableAutoSyncIfSet() {
+    if (
+      this.settings.autoRunEveryMilliseconds !== undefined &&
+      this.settings.autoRunEveryMilliseconds !== null &&
+      this.settings.autoRunEveryMilliseconds > 0
+    ) {
+      const intervalID = window.setInterval(() => {
+        this.syncRun("auto");
+      }, this.settings.autoRunEveryMilliseconds);
+      this.autoRunIntervalID = intervalID;
+      this.registerInterval(intervalID);
+    }
+  }
+
+  async saveAgreeToUseNewSyncAlgorithm() {
+    this.settings.agreeToUploadExtraMetadata = true;
+    await this.saveSettings();
   }
 
   destroyDBs() {
