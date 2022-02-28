@@ -1,17 +1,100 @@
 import { Buffer } from "buffer";
-import { Vault } from "obsidian";
-import type { FileStat, WebDAVClient } from "webdav/web";
-import { AuthType, BufferLike, createClient } from "webdav/web";
+import { Vault, request, requestUrl, requireApiVersion } from "obsidian";
+
 import { Queue } from "@fyears/tsqueue";
 import chunk from "lodash/chunk";
 import flatten from "lodash/flatten";
+import { getReasonPhrase } from "http-status-codes";
 import type { RemoteItem, WebdavConfig } from "./baseTypes";
 import { decryptArrayBuffer, encryptArrayBuffer } from "./encrypt";
 import { bufferToArrayBuffer, getPathFolder, mkdirpInVault } from "./misc";
-export type { WebDAVClient } from "webdav/web";
 
 import * as origLog from "loglevel";
 const log = origLog.getLogger("rs-default");
+
+import { getPatcher } from "webdav/web";
+if (requireApiVersion("0.13.26")) {
+  getPatcher().patch("request", (options: any) => {
+    log.debug("start using obsidian requestUrl");
+    const r = requestUrl({
+      url: options.url,
+      method: options.method,
+      body: options.data,
+      headers: options.headers,
+    }).then((r) => {
+      if (options.responseType === undefined) {
+        return {
+          data: undefined,
+          status: r.status,
+          statusText: getReasonPhrase(r.status),
+          headers: r.headers,
+        };
+      }
+      if (options.responseType === "json") {
+        return {
+          data: r.json,
+          status: r.status,
+          statusText: getReasonPhrase(r.status),
+          headers: r.headers,
+        };
+      }
+      if (options.responseType === "text") {
+        return {
+          data: r.text,
+          status: r.status,
+          statusText: getReasonPhrase(r.status),
+          headers: r.headers,
+        };
+      }
+      if (options.responseType === "arraybuffer") {
+        return {
+          data: r.arrayBuffer,
+          status: r.status,
+          statusText: getReasonPhrase(r.status),
+          headers: r.headers,
+        };
+      }
+    });
+    log.debug("end using obsidian requestUrl");
+    return r;
+  });
+}
+// getPatcher().patch("request", (options: any) => {
+//   // console.log("using fetch");
+//   const r = fetch(options.url, {
+//     method: options.method,
+//     body: options.data as any,
+//     headers: options.headers,
+//     signal: options.signal,
+//   })
+//     .then((rsp) => {
+//       if (options.responseType === undefined) {
+//         return Promise.all([undefined, rsp]);
+//       }
+//       if (options.responseType === "json") {
+//         return Promise.all([rsp.json(), rsp]);
+//       }
+//       if (options.responseType === "text") {
+//         return Promise.all([rsp.text(), rsp]);
+//       }
+//       if (options.responseType === "arraybuffer") {
+//         return Promise.all([rsp.arrayBuffer(), rsp]);
+//       }
+//     })
+//     .then(([d, r]) => {
+//       return {
+//         data: d,
+//         status: r.status,
+//         statusText: r.statusText,
+//         headers: r.headers,
+//       };
+//     });
+//   // console.log("using fetch");
+//   return r;
+// });
+import type { FileStat, WebDAVClient } from "webdav/web";
+import { AuthType, BufferLike, createClient } from "webdav/web";
+export type { WebDAVClient } from "webdav/web";
 
 export const DEFAULT_WEBDAV_CONFIG = {
   address: "",
@@ -169,7 +252,7 @@ export const uploadToRemote = async (
       // if encrypted, upload a fake file with the encrypted file name
       await client.client.putFileContents(uploadFile, "", {
         overwrite: true,
-        onUploadProgress: (progress) => {
+        onUploadProgress: (progress: any) => {
           // log.info(`Uploaded ${progress.loaded} bytes of ${progress.total}`);
         },
       });
@@ -200,7 +283,7 @@ export const uploadToRemote = async (
     }
     await client.client.putFileContents(uploadFile, remoteContent, {
       overwrite: true,
-      onUploadProgress: (progress) => {
+      onUploadProgress: (progress: any) => {
         log.info(`Uploaded ${progress.loaded} bytes of ${progress.total}`);
       },
     });
