@@ -12,16 +12,23 @@ import { bufferToArrayBuffer, getPathFolder, mkdirpInVault } from "./misc";
 import * as origLog from "loglevel";
 const log = origLog.getLogger("rs-default");
 
+import type {
+  FileStat,
+  WebDAVClient,
+  RequestOptionsWithState,
+  Response,
+  ResponseDataDetailed,
+} from "webdav/web";
 import { getPatcher } from "webdav/web";
 if (requireApiVersion("0.13.26")) {
-  getPatcher().patch("request", (options: any) => {
+  getPatcher().patch("request", (options: RequestOptionsWithState) => {
     log.debug("start using obsidian requestUrl");
     const r = requestUrl({
       url: options.url,
       method: options.method,
-      body: options.data,
+      body: options.data as string | ArrayBuffer,
       headers: options.headers,
-    }).then((r) => {
+    }).then((r): Response | ResponseDataDetailed<any> => {
       if (options.responseType === undefined) {
         return {
           data: undefined,
@@ -92,7 +99,6 @@ if (requireApiVersion("0.13.26")) {
 //   // console.log("using fetch");
 //   return r;
 // });
-import type { FileStat, WebDAVClient } from "webdav/web";
 import { AuthType, BufferLike, createClient } from "webdav/web";
 export type { WebDAVClient } from "webdav/web";
 
