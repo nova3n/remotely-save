@@ -11,9 +11,24 @@ import {
   S3Client,
 } from "@aws-sdk/client-s3";
 import { Upload } from "@aws-sdk/lib-storage";
+import { HttpHandler, HttpRequest, HttpResponse } from "@aws-sdk/protocol-http";
+import {
+  FetchHttpHandler,
+  FetchHttpHandlerOptions,
+} from "@aws-sdk/fetch-http-handler";
+// @ts-ignore
+import { requestTimeout } from "@aws-sdk/fetch-http-handler/dist-es/request-timeout";
+import { buildQueryString } from "@aws-sdk/querystring-builder";
+import { HeaderBag, HttpHandlerOptions, Provider } from "@aws-sdk/types";
 import { Buffer } from "buffer";
 import * as mime from "mime-types";
-import { Vault } from "obsidian";
+import {
+  Vault,
+  requestUrl,
+  RequestUrlParam,
+  RequestUrlResponse,
+  requireApiVersion,
+} from "obsidian";
 import { Readable } from "stream";
 import { RemoteItem, S3Config } from "./baseTypes";
 import { decryptArrayBuffer, encryptArrayBuffer } from "./encrypt";
@@ -27,6 +42,86 @@ export { S3Client } from "@aws-sdk/client-s3";
 
 import * as origLog from "loglevel";
 const log = origLog.getLogger("rs-default");
+
+////////////////////////////////////////////////////////////////////////////////
+// special handler using Obsidian requestUrl
+////////////////////////////////////////////////////////////////////////////////
+
+/**
+ * This is close to origin implementation of FetchHttpHandler
+ * https://github.com/aws/aws-sdk-js-v3/blob/main/packages/fetch-http-handler/src/fetch-http-handler.ts
+ * that is released under Apache 2 License.
+ * But this uses Obsidian requestUrl instead.
+ */
+class ObsHttpHandler extends FetchHttpHandler {
+  requestTimeoutInMs: number;
+  constructor(options?: FetchHttpHandlerOptions) {
+    super(options);
+    this.requestTimeoutInMs = options!.requestTimeout;
+  }
+  async handle(
+    request: HttpRequest,
+    { abortSignal }: HttpHandlerOptions = {}
+  ): Promise<{ response: HttpResponse }> {
+    if (abortSignal?.aborted) {
+      const abortError = new Error("Request aborted");
+      abortError.name = "AbortError";
+      return Promise.reject(abortError);
+    }
+
+    let path = request.path;
+    if (request.query) {
+      const queryString = buildQueryString(request.query);
+      if (queryString) {
+        path += `?${queryString}`;
+      }
+    }
+
+    const { port, method } = request;
+    const url = `${request.protocol}//${request.hostname}${
+      port ? `:${port}` : ""
+    }${path}`;
+    const body =
+      method === "GET" || method === "HEAD" ? undefined : request.body;
+
+    const param: RequestUrlParam = {
+      body: body,
+      headers: request.headers,
+      method: method,
+      url: url,
+    };
+
+    const raceOfPromises = [
+      requestUrl(param).then((rsp) => {
+        return {
+          response: new HttpResponse({
+            headers: rsp.headers,
+            statusCode: rsp.status,
+            body: rsp.arrayBuffer,
+          }),
+        };
+      }),
+      requestTimeout(this.requestTimeoutInMs),
+    ];
+
+    if (abortSignal) {
+      raceOfPromises.push(
+        new Promise<never>((resolve, reject) => {
+          abortSignal.onabort = () => {
+            const abortError = new Error("Request aborted");
+            abortError.name = "AbortError";
+            reject(abortError);
+          };
+        })
+      );
+    }
+    return Promise.race(raceOfPromises);
+  }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// other stuffs
+////////////////////////////////////////////////////////////////////////////////
 
 export const DEFAULT_S3_CONFIG = {
   s3Endpoint: "",
@@ -66,15 +161,29 @@ export const getS3Client = (s3Config: S3Config) => {
   if (!(endpoint.startsWith("http://") || endpoint.startsWith("https://"))) {
     endpoint = `https://${endpoint}`;
   }
-  const s3Client = new S3Client({
-    region: s3Config.s3Region,
-    endpoint: endpoint,
-    credentials: {
-      accessKeyId: s3Config.s3AccessKeyID,
-      secretAccessKey: s3Config.s3SecretAccessKey,
-    },
-  });
-  return s3Client;
+
+  if (requireApiVersion("0.13.26")) {
+    const s3Client = new S3Client({
+      region: s3Config.s3Region,
+      endpoint: endpoint,
+      credentials: {
+        accessKeyId: s3Config.s3AccessKeyID,
+        secretAccessKey: s3Config.s3SecretAccessKey,
+      },
+      requestHandler: new ObsHttpHandler(),
+    });
+    return s3Client;
+  } else {
+    const s3Client = new S3Client({
+      region: s3Config.s3Region,
+      endpoint: endpoint,
+      credentials: {
+        accessKeyId: s3Config.s3AccessKeyID,
+        secretAccessKey: s3Config.s3SecretAccessKey,
+      },
+    });
+    return s3Client;
+  }
 };
 
 export const getRemoteMeta = async (
