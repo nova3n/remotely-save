@@ -117,3 +117,4 @@ export interface FileOrFolderMixedState {
 }
 
 export const API_VER_STAT_FOLDER = "0.13.27";
+export const API_VER_REQURL = "0.13.26";

@@ -30,7 +30,7 @@ import {
   requireApiVersion,
 } from "obsidian";
 import { Readable } from "stream";
-import { RemoteItem, S3Config } from "./baseTypes";
+import { API_VER_REQURL, RemoteItem, S3Config } from "./baseTypes";
 import { decryptArrayBuffer, encryptArrayBuffer } from "./encrypt";
 import {
   arrayBufferToBuffer,
@@ -93,11 +93,17 @@ class ObsHttpHandler extends FetchHttpHandler {
 
     const raceOfPromises = [
       requestUrl(param).then((rsp) => {
+        const stream = new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(new Uint8Array(rsp.arrayBuffer));
+            controller.close();
+          },
+        });
         return {
           response: new HttpResponse({
             headers: rsp.headers,
             statusCode: rsp.status,
-            body: rsp.arrayBuffer,
+            body: stream,
           }),
         };
       }),
@@ -162,7 +168,7 @@ export const getS3Client = (s3Config: S3Config) => {
     endpoint = `https://${endpoint}`;
   }
 
-  if (requireApiVersion("0.13.26")) {
+  if (requireApiVersion(API_VER_REQURL)) {
     const s3Client = new S3Client({
       region: s3Config.s3Region,
       endpoint: endpoint,
