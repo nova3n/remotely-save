@@ -5,7 +5,7 @@ import { Queue } from "@fyears/tsqueue";
 import chunk from "lodash/chunk";
 import flatten from "lodash/flatten";
 import { getReasonPhrase } from "http-status-codes";
-import type { RemoteItem, WebdavConfig } from "./baseTypes";
+import { API_VER_REQURL, RemoteItem, WebdavConfig } from "./baseTypes";
 import { decryptArrayBuffer, encryptArrayBuffer } from "./encrypt";
 import { bufferToArrayBuffer, getPathFolder, mkdirpInVault } from "./misc";
 
@@ -20,7 +20,7 @@ import type {
   ResponseDataDetailed,
 } from "webdav/web";
 import { getPatcher } from "webdav/web";
-if (requireApiVersion("0.13.26")) {
+if (requireApiVersion(API_VER_REQURL)) {
   getPatcher().patch("request", (options: RequestOptionsWithState) => {
     log.debug("start using obsidian requestUrl");
     const r = requestUrl({
