@@ -135,6 +135,7 @@ export const DEFAULT_S3_CONFIG = {
   s3AccessKeyID: "",
   s3SecretAccessKey: "",
   s3BucketName: "",
+  bypassCorsLocally: false,
 };
 
 export type S3ObjectType = _Object;
@@ -168,7 +169,7 @@ export const getS3Client = (s3Config: S3Config) => {
     endpoint = `https://${endpoint}`;
   }
 
-  if (requireApiVersion(API_VER_REQURL)) {
+  if (requireApiVersion(API_VER_REQURL) && s3Config.bypassCorsLocally) {
     const s3Client = new S3Client({
       region: s3Config.s3Region,
       endpoint: endpoint,

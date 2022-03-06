@@ -5,8 +5,13 @@ import {
   PluginSettingTab,
   Setting,
   Platform,
+  requireApiVersion,
 } from "obsidian";
-import type { SUPPORTED_SERVICES_TYPE, WebdavAuthType } from "./baseTypes";
+import {
+  API_VER_REQURL,
+  SUPPORTED_SERVICES_TYPE,
+  WebdavAuthType,
+} from "./baseTypes";
 import { exportVaultSyncPlansToFiles } from "./debugMode";
 import { exportQrCodeUri } from "./importExport";
 import {
@@ -686,6 +691,34 @@ export class RemotelySaveSettingTab extends PluginSettingTab {
             await this.plugin.saveSettings();
           })
       );
+
+    if (requireApiVersion(API_VER_REQURL)) {
+      new Setting(s3Div)
+        .setName("bypass CORS issue locally (beta)")
+        .setDesc(
+          "Most S3 services allow setting CORS rules on the server. But some service providers don't allow doing that, or don't allow setting non-http(s) rules. You may enable this setting at some performance cost."
+        )
+        .addDropdown((dropdown) => {
+          dropdown
+            .addOption("disable", "disable")
+            .addOption("enable", "enable");
+
+          dropdown
+            .setValue(
+              `${
+                this.plugin.settings.s3.bypassCorsLocally ? "enable" : "disable"
+              }`
+            )
+            .onChange(async (value) => {
+              if (value === "enable") {
+                this.plugin.settings.s3.bypassCorsLocally = true;
+              } else {
+                this.plugin.settings.s3.bypassCorsLocally = false;
+              }
+              await this.plugin.saveSettings();
+            });
+        });
+    }
 
     new Setting(s3Div)
       .setName("check connectivity")

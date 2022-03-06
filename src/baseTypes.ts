@@ -11,6 +11,7 @@ export interface S3Config {
   s3AccessKeyID: string;
   s3SecretAccessKey: string;
   s3BucketName: string;
+  bypassCorsLocally?: boolean;
 }
 
 export interface DropboxConfig {
