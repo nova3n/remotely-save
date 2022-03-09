@@ -998,10 +998,6 @@ export class RemotelySaveSettingTab extends PluginSettingTab {
     });
 
     webdavDiv.createEl("p", {
-      text: "You need to configure CORS to allow requests from origin app://obsidian.md and capacitor://localhost and http://localhost",
-    });
-
-    webdavDiv.createEl("p", {
       text: `We will create and sync inside the folder /${this.app.vault.getName()} on your server.`,
     });
 
