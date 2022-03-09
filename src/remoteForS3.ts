@@ -151,7 +151,7 @@ export const DEFAULT_S3_CONFIG = {
   s3AccessKeyID: "",
   s3SecretAccessKey: "",
   s3BucketName: "",
-  bypassCorsLocally: false,
+  bypassCorsLocally: true,
 };
 
 export type S3ObjectType = _Object;

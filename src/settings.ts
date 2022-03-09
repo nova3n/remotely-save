@@ -600,9 +600,11 @@ export class RemotelySaveSettingTab extends PluginSettingTab {
       cls: "s3-disclaimer",
     });
 
-    s3Div.createEl("p", {
-      text: "You need to configure CORS to allow requests from origin app://obsidian.md and capacitor://localhost and http://localhost",
-    });
+    if (!requireApiVersion(API_VER_REQURL)) {
+      s3Div.createEl("p", {
+        text: "You need to configure CORS to allow requests from origin app://obsidian.md and capacitor://localhost and http://localhost",
+      });
+    }
 
     s3Div.createEl("p", {
       text: "Some Amazon S3 official docs for references:",
@@ -620,10 +622,12 @@ export class RemotelySaveSettingTab extends PluginSettingTab {
       text: "Access key ID and Secret access key info",
     });
 
-    s3LinksUl.createEl("li").createEl("a", {
-      href: "https://docs.aws.amazon.com/AmazonS3/latest/userguide/enabling-cors-examples.html",
-      text: "Configuring CORS",
-    });
+    if (!requireApiVersion(API_VER_REQURL)) {
+      s3LinksUl.createEl("li").createEl("a", {
+        href: "https://docs.aws.amazon.com/AmazonS3/latest/userguide/enabling-cors-examples.html",
+        text: "Configuring CORS",
+      });
+    }
 
     new Setting(s3Div)
       .setName("s3Endpoint")
@@ -694,9 +698,9 @@ export class RemotelySaveSettingTab extends PluginSettingTab {
 
     if (requireApiVersion(API_VER_REQURL)) {
       new Setting(s3Div)
-        .setName("bypass CORS issue locally (beta)")
+        .setName("bypass CORS issue locally")
         .setDesc(
-          "Most S3 services allow setting CORS rules on the server. But some service providers don't allow doing that, or don't allow setting non-http(s) rules. You may enable this setting at some performance cost."
+          `The plugin allows skipping server CORS config in new version (Obsidian>=${API_VER_REQURL}). If you encounter any issues, please disable this setting and config CORS (app://obsidian.md and capacitor://localhost and http://localhost) on server.`
         )
         .addDropdown((dropdown) => {
           dropdown
