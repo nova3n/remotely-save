@@ -21,50 +21,60 @@ import type {
 } from "webdav/web";
 import { getPatcher } from "webdav/web";
 if (requireApiVersion(API_VER_REQURL)) {
-  getPatcher().patch("request", (options: RequestOptionsWithState) => {
-    log.debug("start using obsidian requestUrl");
-    const r = requestUrl({
-      url: options.url,
-      method: options.method,
-      body: options.data as string | ArrayBuffer,
-      headers: options.headers,
-    }).then((r): Response | ResponseDataDetailed<any> => {
+  getPatcher().patch(
+    "request",
+    async (
+      options: RequestOptionsWithState
+    ): Promise<Response | ResponseDataDetailed<any>> => {
+      const transformedHeaders = { ...options.headers };
+      delete transformedHeaders["host"];
+      delete transformedHeaders["Host"];
+      delete transformedHeaders["content-length"];
+      delete transformedHeaders["Content-Length"];
+      const r = await requestUrl({
+        url: options.url,
+        method: options.method,
+        body: options.data as string | ArrayBuffer,
+        headers: transformedHeaders,
+      });
+
+      let r2: Response | ResponseDataDetailed<any> = undefined;
       if (options.responseType === undefined) {
-        return {
+        r2 = {
           data: undefined,
           status: r.status,
           statusText: getReasonPhrase(r.status),
           headers: r.headers,
         };
-      }
-      if (options.responseType === "json") {
-        return {
+      } else if (options.responseType === "json") {
+        r2 = {
           data: r.json,
           status: r.status,
           statusText: getReasonPhrase(r.status),
           headers: r.headers,
         };
-      }
-      if (options.responseType === "text") {
-        return {
+      } else if (options.responseType === "text") {
+        r2 = {
           data: r.text,
           status: r.status,
           statusText: getReasonPhrase(r.status),
           headers: r.headers,
         };
-      }
-      if (options.responseType === "arraybuffer") {
-        return {
+      } else if (options.responseType === "arraybuffer") {
+        r2 = {
           data: r.arrayBuffer,
           status: r.status,
           statusText: getReasonPhrase(r.status),
           headers: r.headers,
         };
+      } else {
+        throw Error(
+          `do not know how to deal with responseType = ${options.responseType}`
+        );
       }
-    });
-    log.debug("end using obsidian requestUrl");
-    return r;
-  });
+      return r2;
+    }
+  );
 }
 // getPatcher().patch("request", (options: any) => {
 //   // console.log("using fetch");
