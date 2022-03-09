@@ -57,7 +57,8 @@ class ObsHttpHandler extends FetchHttpHandler {
   requestTimeoutInMs: number;
   constructor(options?: FetchHttpHandlerOptions) {
     super(options);
-    this.requestTimeoutInMs = options!.requestTimeout;
+    this.requestTimeoutInMs =
+      options === undefined ? undefined : options.requestTimeout;
   }
   async handle(
     request: HttpRequest,
@@ -84,11 +85,26 @@ class ObsHttpHandler extends FetchHttpHandler {
     const body =
       method === "GET" || method === "HEAD" ? undefined : request.body;
 
+    const transformedHeaders = { ...request.headers };
+    delete transformedHeaders.host;
+    delete transformedHeaders["content-length"];
+
+    let contentType: string = undefined;
+    if (transformedHeaders["content-type"] !== undefined) {
+      contentType = transformedHeaders["content-type"];
+    }
+
+    let transformedBody: any = body;
+    if (ArrayBuffer.isView(body)) {
+      transformedBody = bufferToArrayBuffer(body);
+    }
+
     const param: RequestUrlParam = {
-      body: body,
-      headers: request.headers,
+      body: transformedBody,
+      headers: transformedHeaders,
       method: method,
       url: url,
+      contentType: contentType,
     };
 
     const raceOfPromises = [
@@ -268,12 +284,13 @@ export const uploadToRemote = async (
     if (password !== "") {
       remoteContent = await encryptArrayBuffer(localContent, password);
     }
-    const body = arrayBufferToBuffer(remoteContent);
 
+    const bytesIn5MB = 5242880;
+    const body = new Uint8Array(remoteContent);
     const upload = new Upload({
       client: s3Client,
       queueSize: 20, // concurrency
-      partSize: 5242880, // minimal 5MB by default
+      partSize: bytesIn5MB, // minimal 5MB by default
       leavePartsOnError: false,
       params: {
         Bucket: s3Config.s3BucketName,
