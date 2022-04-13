@@ -326,6 +326,7 @@ const ensembleMixedStates = async (
       continue;
     } else if (entry instanceof TFile) {
       const mtimeLocal = Math.max(entry.stat.mtime || 0, entry.stat.ctime || 0);
+      log.info(`[pos1], ${entry.path}, mtimeLocal=${mtimeLocal}, mtime=${entry.stat.mtime}, ctime=${entry.stat.ctime}`);
       r = {
         key: entry.path,
         existLocal: true,
@@ -360,6 +361,7 @@ const ensembleMixedStates = async (
       results[key] = r;
       results[key].existRemote = false;
     }
+    log.info(`[pos2], ${key}, mtimeLocal=${results[key].mtimeLocal}`);
   }
 
   if (syncConfigDir && localConfigDirContents !== undefined) {
@@ -409,6 +411,7 @@ const ensembleMixedStates = async (
       results[key].existLocal = false;
       results[key].existRemote = false;
     }
+    log.info(`[pos3], ${key}, mtimeLocal=${results[key].mtimeLocal}`);
   }
 
   for (const entry of localFileHistory) {
@@ -449,6 +452,7 @@ const ensembleMixedStates = async (
         mtimeLocalFmt: unixTimeToStr(entry.actionWhen),
         changeLocalMtimeUsingMapping: true,
       };
+      log.info(`[pos4], ${key}, mtimeLocal=${results[key].mtimeLocal}, changeLocalMtimeUsingMapping=true`);
       if (results.hasOwnProperty(key)) {
         const mtimeLocal = Math.max(
           r.mtimeLocal || 0,
@@ -463,6 +467,7 @@ const ensembleMixedStates = async (
         results[key].existLocal = false; // we have already checked local
         results[key].existRemote = false; // we have already checked remote
       }
+      log.info(`[pos5], ${key}, mtimeLocal=${results[key].mtimeLocal},changeLocalMtimeUsingMapping=${results[key].changeLocalMtimeUsingMapping} `);
     } else {
       throw Error(
         `do not know how to deal with local file history ${entry.key} with ${entry.actionType}`
@@ -470,6 +475,8 @@ const ensembleMixedStates = async (
     }
   }
 
+  log.info(`[pos6]`);
+  log.info(results);
   return results;
 };
 
