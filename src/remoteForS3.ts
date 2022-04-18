@@ -89,6 +89,9 @@ class ObsHttpHandler extends FetchHttpHandler {
       if (keyLower === "host" || keyLower === "content-length") {
         continue;
       }
+      if (keyLower === "x-amz-date" || keyLower === "date") {
+        log.info(`${keyLower} = ${request.headers[key]}`);
+      }
       transformedHeaders[keyLower] = request.headers[key];
     }
 
