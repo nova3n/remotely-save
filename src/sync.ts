@@ -316,8 +316,10 @@ const ensembleMixedStates = async (
   syncUnderscoreItems: boolean,
   password: string
 ) => {
+  log.debug(`inside ensembleMixedStates`);
   const results = {} as Record<string, FileOrFolderMixedState>;
 
+  log.debug(`remoteStates: ${JSON.stringify(remoteStates, null, 2)}`);
   for (const r of remoteStates) {
     const key = r.key;
 
@@ -328,6 +330,7 @@ const ensembleMixedStates = async (
     results[key].existLocal = false;
   }
 
+  log.debug(`local: ${JSON.stringify(remoteStates, null, 2)}`);
   for (const entry of local) {
     let r = {} as FileOrFolderMixedState;
     let key = entry.path;
@@ -378,6 +381,13 @@ const ensembleMixedStates = async (
   }
 
   if (syncConfigDir && localConfigDirContents !== undefined) {
+    log.debug(
+      `localConfigDirContents: ${JSON.stringify(
+        localConfigDirContents,
+        null,
+        2
+      )}`
+    );
     for (const entry of localConfigDirContents) {
       const key = entry.key;
       const mtimeLocal = Math.max(entry.mtime, entry.ctime);
@@ -405,6 +415,9 @@ const ensembleMixedStates = async (
     }
   }
 
+  log.debug(
+    `remoteDeleteHistory: ${JSON.stringify(remoteDeleteHistory, null, 2)}`
+  );
   for (const entry of remoteDeleteHistory) {
     const key = entry.key;
     const r = {
@@ -429,6 +442,7 @@ const ensembleMixedStates = async (
     }
   }
 
+  log.debug(`localFileHistory: ${JSON.stringify(localFileHistory, null, 2)}`);
   for (const entry of localFileHistory) {
     let key = entry.key;
     if (entry.keyType === "folder") {
